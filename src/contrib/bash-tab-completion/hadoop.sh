@@ -31,91 +31,75 @@ _hadoop() {
   # Bash lets you tab complete things even if the script doesn't
   # exist (or isn't executable). Check to make sure it is, as we
   # need to execute it to get options/info
-  if [ -f "$script" -a -x "$script" ]; then
-    case $COMP_CWORD in
-    1)
-      # Completing the first argument (the command).
+  case $COMP_CWORD in
+  1)
+    # Completing the first argument (the command).
+    temp=`$script | grep -n "^\s*or"`;
+    temp=`$script | head -n $((${temp%%:*} - 1)) | awk '/^ / {print $1}' | sort | uniq`;
+    COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
+    return 0;;
 
-      temp=`$script | grep -n "^\s*or"`;
-      temp=`$script | head -n $((${temp%%:*} - 1)) | awk '/^ / {print $1}' | sort | uniq`;
+  2)
+    # Completing the second arg (first arg to the command)
+    # The output of commands isn't hugely consistent, so certain
+    # names are hardcoded and parsed differently. Some aren't
+    # handled at all (mostly ones without args).
+    case ${COMP_WORDS[1]} in
+    dfs | dfsadmin | fs | job | pipes | mradmin)
+      # One option per line, enclosed in square brackets
+      temp=`$script ${COMP_WORDS[1]} 2>&1 | awk '/^[ \t]*\[/ {gsub(/[\[\]]/, ""); print $1}'`;
       COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
       return 0;;
 
-    2)
-      # Completing the second arg (first arg to the command)
+    jar)
+      # Any (jar) file
 
-      # The output of commands isn't hugely consistent, so certain
-      # names are hardcoded and parsed differently. Some aren't
-      # handled at all (mostly ones without args).
-      case ${COMP_WORDS[1]} in
-      dfs | dfsadmin | fs | job | pipes)
-        # One option per line, enclosed in square brackets
+      COMPREPLY=(`compgen -A file -- ${cur}`);
+      return 0;;
 
-        temp=`$script ${COMP_WORDS[1]} 2>&1 | awk '/^[ \t]*\[/ {gsub("[[\\]]", ""); print $1}'`;
-        COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
-        return 0;;
+    namenode | jobtracker)
+      # All options specified in the Usage line from "haooop namenode --help"
+      # enclosed in [] and separated with |
+      temp=`$script ${COMP_WORDS[1]} --help 2>&1 | grep -i "Usage:" | cut -d '[' -f 2- | awk '{gsub(/[\[\] \t\|]/, " "); print}'`;
+      COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
+      return 0;;
 
-      jar)
-        # Any (jar) file
+    datanode)
+      # All options specified in the Usage line from "hadoop datanode --help"
+      # note that the options are provided on a separate new line
+      temp=`$script ${COMP_WORDS[1]} --help 2>&1 | awk '/Usage:/ {getline; gsub(/[\[\]]/, ""); print}'`;
+      COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
+      return 0;;
 
-        COMPREPLY=(`compgen -A file -- ${cur}`);
-        return 0;;
+    fsck)
+      temp=`$script ${COMP_WORDS[1]} 2>&1 | grep -i "Usage:" | cut -d '>' -f 2 | awk '{gsub(/[\[\]\|]/, ""); print}'`;
+      COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
+      return 0;;
 
-      namenode)
-        # All options specified in one line,
-        # enclosed in [] and separated with |
-        temp=`$script ${COMP_WORDS[1]} -help 2>&1 | grep Usage: | cut -d '[' -f 2- | awk '{gsub("] \\| \\[|]", " "); print $0}'`;
-        COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
-        return 0;;
+    balancer)
+      temp=`$script ${COMP_WORDS[1]} --help 2>&1 | awk '/Usage:/ {getline; gsub(/[\[\]]/, ""); gsub(/<.*/, ""); print}'`;
+      COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
+      return 0;;
 
-      *)
-        # Other commands - no idea
+    fetchdt)
+      temp=`$script ${COMP_WORDS[1]} 2>&1 | awk '/\s*-{2}/ {print $1}'`;
+      COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
+      return 0;;
 
-        return 1;;
-      esac;;
+    pipes | job | queue)
+      temp=`$script ${COMP_WORDS[1]} 2>&1 | awk '/\s*\[-/ {gsub(/\[/, ""); print $1}'`;
+      COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
+      return 0;;
 
     *)
-      # Additional args
-      
-      case ${COMP_WORDS[1]} in
-      dfs | fs)
-        # DFS/FS subcommand completion
-        # Pull the list of options, grep for the one the user is trying to use,
-        # and then select the description of the relevant argument
-        temp=$((${COMP_CWORD} - 1));
-        temp=`$script ${COMP_WORDS[1]} 2>&1 | grep -- "${COMP_WORDS[2]} " | awk '{gsub("[[ \\]]", ""); print $0}' | cut -d '<' -f ${temp}`;
+      # Other commands - no idea
 
-        if [ ${#temp} -lt 1 ]; then
-          # No match
-          return 1;
-        fi;
+      return 1;;
+    esac;;
 
-        temp=${temp:0:$((${#temp} - 1))};
-
-        # Now do completion based on the argument
-        case $temp in
-        path | src | dst)
-          # DFS path completion
-          temp=`$script ${COMP_WORDS[1]} -ls "${cur}*" 2>&1 | grep -vE '^Found ' | cut -f 1 | awk '{gsub("^.* ", ""); print $0;}'`
-          COMPREPLY=(`compgen -W "${temp}" -- ${cur}`);
-          return 0;;
-
-        localsrc | localdst)
-          # Local path completion
-          COMPREPLY=(`compgen -A file -- ${cur}`);
-          return 0;;
-
-        *)
-          # Other arguments - no idea
-          return 1;;
-        esac;;
-
-      *)
-        # Other subcommands - no idea
-        return 1;;
-      esac;
-    esac;
-  fi;
+  *)
+    return 1;;
+  esac;
 }
 
 complete -F _hadoop hadoop
